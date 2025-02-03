@@ -47,10 +47,12 @@ class Comms(ChainManager):
         metagraph=None,
         hparams=None,
         uid=None,
+        device=None,
         **kwargs,
     ):
         self.wallet = wallet
         self.uid = uid
+        self.device = device or 'cuda'
         # Create temp directory for this instance
         self.temp_dir = os.path.join("/tmp", f"templar_{self.uid}")
         os.makedirs(self.temp_dir, exist_ok=True)
@@ -64,6 +66,7 @@ class Comms(ChainManager):
             hparams=hparams,
             wallet=self.wallet,
             bucket=self.bucket,
+            uid=self.uid,
         )
 
         # Use the hotkey directly in the save_location

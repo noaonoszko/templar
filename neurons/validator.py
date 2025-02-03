@@ -27,6 +27,7 @@ import argparse
 import threading
 from contextlib import contextmanager
 from time import perf_counter
+import io
 
 # Third party
 import torch
@@ -39,6 +40,8 @@ from torch.optim.lr_scheduler import (
     LinearLR,
     SequentialLR,
 )
+from torch.distributed import dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 # Local
 import tplr
@@ -72,6 +75,8 @@ class Validator:
         parser.add_argument('--debug', action='store_true', help='Enable debug logging')
         parser.add_argument('--trace', action='store_true', help='Enable trace logging')
         parser.add_argument('--store-gathers', action='store_true', help='Store gathered gradients in R2')
+        parser.add_argument('--world-size', type=int, default=torch.cuda.device_count())
+        parser.add_argument('--port', type=int, default=29500)
         bt.subtensor.add_args(parser)
         bt.logging.add_args(parser)
         bt.wallet.add_args(parser)
@@ -82,25 +87,36 @@ class Validator:
             tplr.trace()
         return config
     
-    def __init__(self):
-        tplr.logger.debug("Starting initialization...")
+    def __init__(self, config, local_rank):
+        self.local_rank = local_rank
+        self.device = f'cuda:{local_rank}'
+        self.is_rank0 = local_rank == 0
         
         # Init config and load hparams
         self.config = Validator.config()
         self.hparams = tplr.load_hparams()
         
-        # Init bittensor objects
-        self.wallet = bt.wallet(config=self.config)
-        self.subtensor = bt.subtensor(config=self.config)
-        self.metagraph = self.subtensor.metagraph(self.config.netuid)
-        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys:
-            tplr.logger.error(f'\n\t[bold]The wallet {self.wallet} is not registered on subnet: {self.metagraph.netuid}[/bold]')
-            sys.exit()
-        self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
+        # Init bittensor objects (only on rank 0)
+        if self.is_rank0:
+            self.wallet = bt.wallet(config=self.config)
+            self.subtensor = bt.subtensor(config=self.config)
+            self.metagraph = self.subtensor.metagraph(self.config.netuid)
+            if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys:
+                tplr.logger.error(f'\n\t[bold]The wallet {self.wallet} is not registered on subnet: {self.metagraph.netuid}[/bold]')
+                sys.exit()
+            self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
+            uid_tensor = torch.tensor([self.uid], device=self.device)
+        else:
+            uid_tensor = torch.tensor([0], device=self.device)
         
-        # Init model with hparams config
+        # Broadcast uid to all ranks
+        dist.broadcast(uid_tensor, 0)
+        self.uid = uid_tensor.item()
+        
+        # Init model with DDP
         self.model = LlamaForCausalLM(self.hparams.model_config)
         self.model.to(self.config.device)
+        self.model = DDP(self.model, device_ids=[local_rank])
         self.tokenizer = self.hparams.tokenizer
         
         # Init compression
@@ -143,8 +159,9 @@ class Validator:
             milestones=[250]
         )
 
-        # Init comms with required chain management args
-        self.comms = tplr.comms.Comms(
+        # Init comms (only on rank 0)
+        if self.is_rank0:
+            self.comms = tplr.comms.Comms(
             wallet=self.wallet,
             save_location='/tmp',
             key_prefix='model',
@@ -152,7 +169,8 @@ class Validator:
             netuid=self.config.netuid,
             metagraph=self.metagraph,
             hparams=self.hparams,
-            uid=self.uid, 
+            uid=self.uid,
+            device=self.device
         )
 
 
@@ -277,21 +295,7 @@ class Validator:
         self.comms.start_background_tasks()
 
         while True:
-            # Check for catch-up need
-            catch_up_success, new_global_step, new_optimizer, new_scheduler = await self.comms.check_and_perform_catch_up(
-                model=self.model,
-                optimizer=self.optimizer,
-                scheduler=self.scheduler,
-                transformer=self.transformer,
-                compressor=self.compressor,
-                current_window=self.current_window,
-                sync_window=self.sync_window,
-                device=self.config.device,
-                peers=self.peers,
-                uid=self.uid,
-                global_step=self.global_step,
-                hparams=self.hparams
-            )
+            step_window = self.current_window
             
             if catch_up_success:
                 self.global_step = new_global_step
