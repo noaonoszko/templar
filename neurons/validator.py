@@ -342,6 +342,7 @@ class Validator:
         self.comms.start_commitment_fetcher()
         self.comms.start_background_tasks()
         time_min = None
+        self.last_peer_update_window = None
         while True:
             while self.sync_window >= (
                 self.current_window - self.hparams.validator_offset
@@ -363,6 +364,22 @@ class Validator:
             )
 
             peer_start = tplr.T()
+            initial_selection = False
+            if self.last_peer_update_window is None:
+                success = self.select_initial_gather_peers()
+                initial_selection = True
+            else:
+                success = self.update_peers()
+            if success:
+                self.last_peer_update_window = self.sync_window
+                await self.comms.post_peer_list(
+                    first_effective_window=self.current_window
+                    + self.hparams.peer_list_window_margin,
+                    sync_window=self.sync_window,
+                    weights=self.weights,
+                    initial_selection=initial_selection,
+                )
+
             self.comms.update_peers_with_buckets()
             self.peers = self.comms.peers
             self.eval_peers = self.comms.eval_peers
