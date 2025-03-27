@@ -118,6 +118,8 @@ class Validator:
         # Init config and load hparams
         self.config = Validator.config()
         self.hparams = tplr.load_hparams()
+        tplr.logger.info(self.hparams)
+        tplr.logger.info(self.hparams.minimum_peers)
 
         # Init bittensor objects
         self.wallet = bt.wallet(config=self.config)
@@ -1701,6 +1703,7 @@ class Validator:
                 return top_incentive_and_active_peers
 
             # 3. Give up
+            tplr.logger.info(f"{self.hparams.minimum_peers=}")
             tplr.logger.info(
                 f"Failed to find at least {self.hparams.minimum_peers} initial gather "
                 f"peers. Found only {len(top_incentive_and_active_peers)} active "
@@ -1719,6 +1722,7 @@ class Validator:
         non_zero_weight_uids = torch.nonzero(self.weights).flatten().numpy()
         candidates = list(set(non_zero_weight_uids) - set(self.comms.peers))
 
+        tplr.logger.info(f"{self.hparams.peers_to_replace=}")
         if len(candidates) < self.hparams.peers_to_replace:
             tplr.logger.info(
                 "Skipping update because there are insufficient candidate UIDs: "
