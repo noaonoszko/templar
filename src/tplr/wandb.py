@@ -45,7 +45,6 @@ def initialize_wandb(
     # Initialize WandB with version as a tag
     run = wandb.init(
         project=config.project,
-        entity="tplr",
         id=run_id,
         resume="must" if run_id else "never",
         name=f"{run_prefix}{uid}",
