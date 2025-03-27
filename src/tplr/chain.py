@@ -476,7 +476,7 @@ class ChainManager:
         self.eval_peers = {
             int(uid): self.eval_peers.get(int(uid), 1)
             for uid in active_peers
-            if uid in uid_to_stake and uid_to_stake[uid] <= 20000
+            if uid in uid_to_stake and uid_to_stake[uid] <= 500
         }
 
         logger.debug(f"Filtered eval peers: {list(self.eval_peers.keys())}")

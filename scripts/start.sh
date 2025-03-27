@@ -9,8 +9,3 @@ ps aux | grep Bistro
 
 # Start all applications
 pm2 start ecosystem.config.js
-
-
-pm2 log TM1
-
-
