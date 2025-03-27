@@ -1479,6 +1479,7 @@ class Comms(ChainManager):
             "sync_window": sync_window,
             "first_effective_window": first_effective_window,
         }
+        tplr.logger.info(f"about to post {peers_and_weights=}")
 
         # Create temporary JSON file
         temp_file = os.path.join(self.temp_dir, f"temp_{key}")
