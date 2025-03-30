@@ -4,12 +4,43 @@ import torch
 
 import tplr
 from neurons.validator import Validator
+from typing import Any
 
 hparams = tplr.load_hparams()
 
 
 class TestPeerSelection:
     """Tests for peer selection functionality."""
+
+    @classmethod
+    def assert_basic_requirements(
+        cls,
+        mock_validator: Validator,
+        selected_peers: tplr.comms.PeerArray | None,
+        initial_peers: tplr.comms.PeerArray,
+    ):
+        """Helper method to verify peer selection results.
+
+        Args:
+            mock_validator: The mock validator instance
+            selected_peers: Array of selected peer UIDs
+        """
+        # Peers are successfully updated and are of the right type
+        assert isinstance(selected_peers, np.ndarray)
+        assert selected_peers.dtype == np.int64
+
+        # All peers should be active
+        assert set(selected_peers).issubset(set(mock_validator.comms.active_peers))
+
+        # Number of peers is within range
+        assert (
+            mock_validator.hparams.minimum_peers
+            <= len(selected_peers)
+            <= mock_validator.hparams.max_topk_peers
+        )
+
+        # Verify peer list hasn't changed
+        assert np.array_equal(mock_validator.comms.peers, initial_peers)
 
     class TestUpdatePeers:
         """Tests for select_next_peers method."""
@@ -125,72 +156,55 @@ class TestPeerSelection:
             # Verify we got different peer lists
             assert not all(np.array_equal(r, results[0]) for r in results[1:])
 
-    class TestSelectInitialGatherPeers:
+    class TestSelectInitialPeers:
         """Tests for select_initial_peers method."""
 
-        def _assert_basic_requirements(self, mock_validator: Validator, success: bool):
-            """Helper method to verify peer selection results.
-
-            Args:
-                mock_validator: The mock validator instance
-                expected_peer_count: Expected number of peers
-                top_incentive_indices: Expected peer indices (optional)
-            """
-            # Peers are successfully updated
-            assert success is True
-
-            # All peers should be active
-            assert set(mock_validator.comms.peers).issubset(
-                set(mock_validator.comms.active_peers)
-            )
-
-            # Number of peers is within range
-            assert (
-                mock_validator.hparams.minimum_peers
-                <= len(mock_validator.comms.peers)
-                <= mock_validator.hparams.max_topk_peers
-            )
-
-        def _assert_all_miners_with_non_zero_incentive_in_peers(self, mock_validator):
+        def _assert_all_miners_with_non_zero_incentive_in_peers(
+            self, mock_validator: Validator, selected_peers: tplr.comms.PeerArray
+        ):
             """Verify that all miners with non-zero incentive are included in peers."""
             non_zero_incentive_uids = np.nonzero(mock_validator.metagraph.I)[0]
-            return set(non_zero_incentive_uids).issubset(mock_validator.comms.peers)
+            return set(non_zero_incentive_uids).issubset(selected_peers)
 
         @pytest.mark.parametrize("num_non_zero_incentive", [100, 200])
         def test_with_only_incentive_peers(self, mock_validator, top_incentive_indices):
+            initial_peers = mock_validator.comms.peers
+
             # Call the actual method
-            success = mock_validator.select_initial_peers()
+            selected_peers = mock_validator.select_initial_peers()
 
-            assert success is True
-
-            self._assert_basic_requirements(
-                mock_validator=mock_validator, success=success
+            TestPeerSelection.assert_basic_requirements(
+                mock_validator=mock_validator,
+                selected_peers=selected_peers,
+                initial_peers=initial_peers,
             )
 
             # Peers should be the top incentive miners
-            assert set(mock_validator.comms.peers) == set(top_incentive_indices)
+            assert set(selected_peers) == set(top_incentive_indices)
 
             # Verify peer count
-            assert (
-                len(mock_validator.comms.peers) == mock_validator.hparams.max_topk_peers
-            )
+            assert len(selected_peers) == mock_validator.hparams.max_topk_peers
 
         @pytest.mark.parametrize(
             "num_non_zero_incentive", [0, hparams.minimum_peers - 1]
         )
-        def test_with_some_zero_incentive_peers(self, mock_validator):
-            # Call the actual method
-            success = mock_validator.select_initial_peers()
+        def test_with_some_zero_incentive_peers(self, mock_validator: Validator):
+            initial_peers = mock_validator.comms.peers
 
-            self._assert_basic_requirements(
-                mock_validator=mock_validator, success=success
+            # Call the actual method
+            selected_peers = mock_validator.select_initial_peers()
+
+            TestPeerSelection.assert_basic_requirements(
+                mock_validator=mock_validator,
+                selected_peers=selected_peers,
+                initial_peers=initial_peers,
             )
-            self._assert_all_miners_with_non_zero_incentive_in_peers(mock_validator)
+            self._assert_all_miners_with_non_zero_incentive_in_peers(
+                mock_validator, selected_peers
+            )
 
             # Verify peer count
-            assert (
-                len(mock_validator.comms.peers) == mock_validator.hparams.max_topk_peers
-            )
+            assert len(selected_peers) == mock_validator.hparams.max_topk_peers
 
         @pytest.mark.parametrize(
             "num_non_zero_incentive",
@@ -203,17 +217,23 @@ class TestPeerSelection:
             indirect=True,
         )
         def test_with_non_full_peer_list(self, mock_validator):
-            # Call the actual method
-            success = mock_validator.select_initial_peers()
+            initial_peers = mock_validator.comms.peers
 
-            self._assert_basic_requirements(
-                mock_validator=mock_validator, success=success
+            # Call the actual method
+            selected_peers = mock_validator.select_initial_peers()
+
+            TestPeerSelection.assert_basic_requirements(
+                mock_validator=mock_validator,
+                selected_peers=selected_peers,
+                initial_peers=initial_peers,
             )
-            self._assert_all_miners_with_non_zero_incentive_in_peers(mock_validator)
+            self._assert_all_miners_with_non_zero_incentive_in_peers(
+                mock_validator, selected_peers
+            )
 
             # Assert that all active peers are in peers and that it's fewer than
             # max allowed
-            assert len(mock_validator.comms.peers) < hparams.max_topk_peers
+            assert len(selected_peers) < hparams.max_topk_peers
 
         @pytest.mark.parametrize(
             "num_non_zero_incentive",
@@ -227,10 +247,9 @@ class TestPeerSelection:
         )
         def test_with_too_few_active_peers(self, mock_validator):
             # Call the actual method
-            success = mock_validator.select_initial_peers()
+            selected_peers = mock_validator.select_initial_peers()
 
-            assert success is False
-            assert mock_validator.comms.peers is None
+            assert selected_peers is None
 
     @pytest.fixture
     def top_incentive_indices(self, mock_validator):
