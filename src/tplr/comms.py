@@ -1497,7 +1497,7 @@ class Comms(ChainManager):
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
-    async def get_peer_list(self) -> tuple[int, int] | None:
+    async def get_peer_list(self) -> tuple[PeerArray, int] | None:
         tplr.logger.info("Starting to look for a peer list on a validator bucket")
         while True:
             try:
@@ -1537,11 +1537,16 @@ class Comms(ChainManager):
                     }
                     response = await s3_client.list_objects_v2(**list_args)
 
-                keys = [obj["Key"] for obj in response.get("Contents", [])]
-                if len(keys) == 0:
-                    tplr.logger.info("No peer list file found on bucket")
-                    return None
                 pattern = rf"^{PEERS_FILE_PREFIX}(?P<window>\d+)_v{__version__}\.json$"
+                # Filter keys that match the pattern
+                keys = [
+                    obj["Key"]
+                    for obj in response.get("Contents", [])
+                    if re.match(pattern, obj["Key"])
+                ]
+                if len(keys) == 0:
+                    tplr.logger.info("No peer list files found")
+                    return None
                 max_window = -1
                 selected_key = None
                 for key in keys:
@@ -1553,9 +1558,10 @@ class Comms(ChainManager):
                             selected_key = key
                 if selected_key is None:
                     tplr.logger.error(
-                        f"No peer list file matched the regex pattern "
-                        f"{pattern}. First five files are {keys[:5]}"
+                        f"Failed to select most recent peers file on bucket. First "
+                        f"{len(keys[:5])} peer list files are {keys[:5]}"
                     )
+                    return None
                 else:
                     # get the file
                     peers_data = await self.s3_get_object(
