@@ -150,7 +150,7 @@ async def update_peers(
             else f"sync window is {window} and peers update window "
             f"is {instance.peers_update_window}"
         )
-        logger.info(f"Not time to replace peers yet: {reason}")
+        logger.info(f"Not time to replace peers: {reason}")
 
 
 async def catchup_with_aggregation_server(
