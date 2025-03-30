@@ -25,10 +25,19 @@ from torch._prims_common import DeviceLikeType
 import tplr
 from tplr.logging import logger
 
+##### quick hack until we solve the name clash with /neurons and /src/tplr/neurons.py
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath(os.path.join(__file__, "../../../neurons")))
+from aggregator import AggregationServer
+
+sys.path.pop(0)  # Clean up immediately to avoid conflicts later
+#####
+
 if TYPE_CHECKING:
     from neurons.miner import Miner
     from neurons.validator import Validator
-    from neurons.aggregator import AggregationServer
 
 NeuronT = TypeVar("NeuronT", "Miner", "Validator")
 
