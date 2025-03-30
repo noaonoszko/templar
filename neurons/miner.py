@@ -695,7 +695,7 @@ class Miner:
                     "gather_success_rate": gather_success_rate,
                     "max_grad_norm": max(grad_norms) if grad_norms else 0,
                     "min_grad_norm": min(grad_norms) if grad_norms else 0,
-                    "gather_peers": json.dumps(self.comms.peers),
+                    "gather_peers": json.dumps(self.comms.peers.tolist()),
                     "skipped_peers": json.dumps(
                         gather_result.skipped_uids if gather_result else []
                     ),
