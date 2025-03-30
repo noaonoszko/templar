@@ -35,6 +35,7 @@ import bittensor as bt
 import numpy as np
 from rich.console import Console
 from rich.table import Table
+from typing import Any
 
 
 # Third party
@@ -1674,12 +1675,11 @@ class Validator:
 
             assert len(top_incentive_peers) <= self.hparams.max_topk_peers
             if len(top_incentive_peers) >= self.hparams.minimum_peers:
-                self.comms.peers = top_incentive_peers
                 tplr.logger.info(
-                    f"Selected {len(self.comms.peers)} purely based on incentive: "
-                    f"{self.comms.peers}"
+                    f"Selected {len(top_incentive_peers)} purely based on incentive: "
+                    f"{top_incentive_peers}"
                 )
-                return True
+                return top_incentive_peers
 
             # 2. If needed, fill up with active peers
             remaining_active_peers = np.array(
@@ -1691,14 +1691,13 @@ class Validator:
 
             assert len(top_incentive_and_active_peers) <= self.hparams.max_topk_peers
             if len(top_incentive_and_active_peers) >= self.hparams.minimum_peers:
-                self.comms.peers = top_incentive_and_active_peers
                 tplr.logger.info(
-                    f"Selected {len(self.comms.peers)} initial peers. "
+                    f"Selected {top_incentive_and_active_peers} initial peers. "
                     f"{len(top_incentive_peers)} with incentive: {top_incentive_peers} "
                     f"and {len(remaining_active_peers)} without: "
                     f"{remaining_active_peers}"
                 )
-                return True
+                return top_incentive_and_active_peers
 
             # 3. Give up
             tplr.logger.info(
@@ -1708,11 +1707,11 @@ class Validator:
                 f"{len(top_incentive_and_active_peers) - len(top_incentive_peers)} "
                 f"were incentiveless active peers."
             )
-            return False
+            return None
 
         except Exception as e:
             tplr.logger.error(f"Failed to create new peer list: {e}")
-            return False
+            return None
 
     def select_next_peers(self) -> bool:
         # 1. Define candidate peers

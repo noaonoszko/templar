@@ -42,7 +42,7 @@ import tplr as tplr
 # from .hparams import HParams
 
 from types import SimpleNamespace
-from typing import Tuple
+from typing import Any, Tuple
 from transformers import LlamaForCausalLM
 from torch.optim import SGD
 from torch.optim.lr_scheduler import SequentialLR
@@ -53,6 +53,9 @@ from .compress import TransformDCT, CompressDCT
 CF_REGION_NAME: str = "enam"
 LOCAL_TMP_DIR = "/tmp/local_store"
 PEERS_FILE_PREFIX = "peers_"
+
+# Types
+PeerArray = np.ndarray[Any, np.dtype[np.int64]]
 
 
 class Comms(ChainManager):
