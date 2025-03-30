@@ -395,13 +395,14 @@ class Validator:
                     f"Time to create and post a new peer list because {reason}"
                 )
                 if self.last_peer_update_window is None:
-                    success = self.select_initial_peers()
+                    selected_peers = self.select_initial_peers()
                     initial_selection = True
                 else:
-                    success = self.select_next_peers()
-                if success:
+                    selected_peers = self.select_next_peers()
+                if selected_peers is not None:
                     self.last_peer_update_window = self.sync_window
                     await self.comms.post_peer_list(
+                        peers=selected_peers,
                         first_effective_window=self.current_window
                         + self.hparams.peer_list_window_margin,
                         sync_window=self.sync_window,

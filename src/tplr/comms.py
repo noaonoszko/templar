@@ -1439,6 +1439,7 @@ class Comms(ChainManager):
 
     async def post_peer_list(
         self,
+        peers: PeerArray,
         first_effective_window: int,
         sync_window: int,
         weights: torch.Tensor,
@@ -1458,7 +1459,7 @@ class Comms(ChainManager):
         """
         key = f"{PEERS_FILE_PREFIX}{first_effective_window}_v{__version__}.json"
         peers_and_weights = {
-            "peers": self.peers.tolist(),
+            "peers": peers.tolist(),
             "weights": weights.tolist(),
             "initial_selection": initial_selection,
             "sync_window": sync_window,
