@@ -204,6 +204,10 @@ class Miner:
             job_type="mining",
         )
 
+        # Initialize peer related attributes
+        self.next_peers: tplr.comms.PeerArray | None = None
+        self.peers_update_window = -1
+
     # Main training loop.
     async def run(self):
         # Start background block listener
@@ -214,9 +218,8 @@ class Miner:
             daemon=True,
         )
         self.listener.start()  #
-        # Load Peers
-        self.next_peers = None
-        self.peers_update_window = -1
+
+        # Use config peers if provided
         if self.config.peers:
             self.comms.peers = self.config.peers
 
@@ -286,8 +289,10 @@ class Miner:
                 f"\n{'-' * 40} Window: {step_window} (Global Step: {self.global_step}) {'-' * 40}"
             )
 
-            self.peer_start = tplr.T()
-            await self.update_peers(step_window)
+            peer_start = tplr.T()
+            await tplr.neurons.update_peers(
+                instance=self, window=step_window, peer_start=peer_start
+            )
 
             # 2. Load training data for this window
             data_start = tplr.T()
@@ -619,7 +624,7 @@ class Miner:
                 sum(momentum_norms) / len(momentum_norms) if momentum_norms else 0
             )
             window_total_time = tplr.T() - window_start
-            peer_update_time = tplr.T() - self.peer_start
+            peer_update_time = tplr.T() - peer_start
             data_loading_time = tplr.T() - data_start
             training_time = tplr.T() - train_start
             compression_time = tplr.T() - compress_start
@@ -681,16 +686,16 @@ class Miner:
                     "mean_momentum_norm": mean_momentum_norm,
                     "batch_duration": duration,
                     "total_tokens": int(self.total_tokens_processed),
-                    "active_peers": int(len(self.peers)),
+                    "active_peers": int(len(self.comms.peers)),
                     "effective_batch_size": int(
-                        len(self.peers) * self.hparams.batch_size
+                        len(self.comms.peers) * self.hparams.batch_size
                     ),
                     "learning_rate": self.scheduler.get_last_lr()[0],
                     "mean_grad_norm": mean_grad_norm,
                     "gather_success_rate": gather_success_rate,
                     "max_grad_norm": max(grad_norms) if grad_norms else 0,
                     "min_grad_norm": min(grad_norms) if grad_norms else 0,
-                    "gather_peers": json.dumps(self.peers),
+                    "gather_peers": json.dumps(self.comms.peers),
                     "skipped_peers": json.dumps(
                         gather_result.skipped_uids if gather_result else []
                     ),
@@ -734,56 +739,6 @@ class Miner:
             tplr.logger.info("Wait for next window...")
             while self.current_window == step_window:
                 await asyncio.sleep(0.1)
-
-    async def update_peers(self, step_window: int) -> None:
-        # Get next peers
-        if (
-            self.next_peers is None  # next peers are not fetched yet
-            and self.peers_update_window  # they should be on bucket by now
-            + self.hparams.peer_replacement_frequency
-            - step_window
-            < self.hparams.peer_list_window_margin
-        ):
-            result = await self.comms.get_peer_list()
-            if result is None:
-                tplr.logger.info("Unable to get peer list from bucket")
-            else:
-                next_peers, peers_update_window = result
-                tplr.logger.info(
-                    f"Got peer list {next_peers} and update window "
-                    f"{peers_update_window} from bucket"
-                )
-                if (
-                    self.peers_update_window is None
-                    or peers_update_window > self.peers_update_window
-                ):
-                    self.next_peers = next_peers
-                    self.peers_update_window = peers_update_window
-                    tplr.logger.info("This list is new, updating next_peers")
-
-        # Update peers, if it's time
-        if self.next_peers is not None and step_window >= self.peers_update_window:
-            self.comms.peers = self.next_peers
-            late_text = (
-                f"{step_window - self.peers_update_window} windows late"
-                if step_window - self.peers_update_window > 0
-                else "on time"
-            )
-            tplr.logger.info(
-                f"{tplr.P(step_window, tplr.T() - self.peer_start)} Updated peers "
-                f"{late_text} - gather:{len(self.comms.peers)}. Next update "
-                f"expected on step window "
-                f"{self.peers_update_window + self.hparams.peer_list_window_margin}"
-            )
-            self.next_peers = None
-        else:
-            reason = (
-                "next peers are not defined yet"
-                if self.next_peers is None
-                else f"sync window is {step_window} and peers update window "
-                f"is {self.peers_update_window}"
-            )
-            tplr.logger.info(f"Not time to replace peers yet: {reason}")
 
     # Listens for new blocks and sets self.current_block and self.current_window
     def block_listener(self, _):
