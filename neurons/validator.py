@@ -1713,7 +1713,7 @@ class Validator:
             tplr.logger.error(f"Failed to create new peer list: {e}")
             return None
 
-    def select_next_peers(self) -> bool:
+    def select_next_peers(self) -> tplr.comms.PeerArray | None:
         # 1. Define candidate peers
         non_zero_weight_uids = torch.nonzero(self.weights).flatten().numpy()
         candidates = list(set(non_zero_weight_uids) - set(self.comms.peers))
@@ -1727,7 +1727,7 @@ class Validator:
                 f"{len(candidates)} of which are not already in the peer list (these "
                 f"are the candidates)."
             )
-            return False
+            return None
 
         # 2. Pick ingoing and ingoing peers
         ingoing_peers = np.random.choice(
@@ -1742,7 +1742,7 @@ class Validator:
         )
 
         # 3. Replace
-        self.comms.peers = np.concatenate(
+        selected_peers = np.concatenate(
             [
                 self.comms.peers[~np.isin(self.comms.peers, outgoing_peers)],
                 ingoing_peers,
@@ -1750,9 +1750,9 @@ class Validator:
         )
         tplr.logger.info(
             f"Updated peer list by swapping {outgoing_peers} for "
-            f"{ingoing_peers}. Current peers are {self.comms.peers}."
+            f"{ingoing_peers}. Current peers are {selected_peers}."
         )
-        return True
+        return selected_peers
 
     # Listens for new blocks and sets self.current_block and self.current_window
     def block_listener(self, loop):
